@@ -1,70 +1,199 @@
 from tkinter import *
 from tkinter import ttk
- 
-root = Tk()
-root.title("Автосервис «АвтоТранс»")
-root.geometry("1920x1080")
-root.attributes("-toolwindow", True)
-root.minsize(320,240)
-root.maxsize(1920,1080) 
-icon = PhotoImage(file = "i.png")
-root.iconphoto(True, icon)
+import database
+import database_orders
+from database_orders import init_db, get_all_orders
 
-label = ttk.Label(text="Добро пожаловать, что вы хотите сделать?")
-label.pack()
+class App:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Автосервис «АвтоТранс»")
+        self.root.geometry("1920x1080")
+        self.root.attributes("-toolwindow", True)
+        self.root.minsize(320, 240)
+        self.root.maxsize(1920, 1080) 
 
-def noprofile():
-    windownp = Tk()
-    windownp.title("Главная страница")
-    windownp.geometry("1920x1080")
-    windownp.attributes("-toolwindow", True)
-    label = ttk.Label(windownp, text="Скоро тут чото будет (за эту упшку я узнал больше чем за 3 года в этом «прекрасном» колледже)")
-    windownp.minsize(320,240)
-    windownp.maxsize(1920,1080)
-    close_button = ttk.Button(windownp, text = "Вернуться на главную", command = lambda: windownp.destroy())
-    close_button.pack()
-    close_button.place(relx=0.75, rely=0.45, width=200, height=70)
-    label.pack()
+        # Создаем контейнер для всех экранов
+        self.container = Frame(root)
+        self.container.pack(fill=BOTH, expand=True)
 
-def client():
-    windowc = Tk()
-    windowc.title("Главная страница")
-    windowc.geometry("1920x1080")
-    windowc.attributes("-toolwindow", True)
-    label = ttk.Label(windowc, text="Введите данные профиля:")
-    windowc.minsize(320,240)
-    windowc.maxsize(1920,1080)
-    close_button = ttk.Button(windowc, text = "Вернуться на главную", command = lambda: windowc.destroy())
-    close_button.pack()
-    close_button.place(relx=0.75, rely=0.45, width=200, height=70)
-    text = ttk.Entry(windowc)
-    text.pack()
-    text.place(relx=0.45, rely=0.45, width=200, height=70)
-    label.pack()
-def admin():
-    windowa = Tk()
-    windowa.title("Главная страница")
-    windowa.geometry("1920x1080")
-    windowa.attributes("-toolwindow", True)
-    label = ttk.Label(windowa, text="Войдите со своим аккаунтом администратора:")
-    windowa.minsize(320,240)
-    windowa.maxsize(1920,1080)
-    close_button = ttk.Button(windowa, text = "Вернуться на главную", command = lambda: windowa.destroy())
-    close_button.pack()
-    close_button.place(relx=0.75, rely=0.45, width=200, height=70)
-    text = ttk.Entry(windowa)
-    text.pack()
-    text.place(relx=0.45, rely=0.45, width=200, height=70)
-    label.pack()
+        # Создаем экраны (Фреймы)
+        self.screens = {}
+        self.add_screen("main", self.create_main_screen)
+        self.add_screen("login", self.create_login_screen)
+        self.add_screen("client_dashboard", self.create_client_dashboard)
+        self.add_screen("admin_dashboard", self.create_admin_dashboard)
+        self.add_screen("manager_dashboard", self.create_manager_dashboard)
 
-btn = ttk.Button(text = "Войти в свой профиль", command = client)
-btn.pack()
-btn.place(relx=0.15, rely=0.45, width=200, height=70)
-btn = ttk.Button(text = "Я сотрудник", command = admin)
-btn.pack()
-btn.place(relx=0.45, rely=0.45, width=200, height=70)
-btn = ttk.Button(text = "Продолжить без профиля", command = noprofile)
-btn.pack()
-btn.place(relx=0.75, rely=0.45, width=200, height=70)
+        # Показываем главный экран при запуске
+        self.show_screen("main")
 
-root.mainloop()
+    def add_screen(self, name, create_func):
+        frame = Frame(self.container)
+        frame.pack(fill=BOTH, expand=True)
+        self.screens[name] = frame
+        create_func(frame)
+
+    def show_screen(self, name):
+        # Скрываем все экраны
+        for frame in self.screens.values():
+            frame.pack_forget()
+        # Показываем нужный
+        self.screens[name].pack(fill=BOTH, expand=True)
+
+    # --- Экран 1: Главное меню ---
+    def create_main_screen(self, frame):
+        label = ttk.Label(frame, text="Добро пожаловать, вас приветствует компания АвтоТранс", font=("Arial", 20))
+        label.pack(pady=50)
+
+        btn_login = ttk.Button(frame, text="Войти", command=lambda: self.show_screen("login"))
+        btn_login.pack(pady=10)
+
+    # --- Экран 2: Вход (Логин/Пароль) ---
+    def create_login_screen(self, frame):
+        ttk.Label(frame, text="Авторизация", font=("Arial", 24)).pack(pady=20)
+
+        # Поле для логина
+        ttk.Label(frame, text="Логин / Почта:").pack()
+        self.login_entry = ttk.Entry(frame, width=30)
+        self.login_entry.pack(pady=5)
+
+        # Поле для пароля (пароль скрыт звездочками)
+        ttk.Label(frame, text="Пароль:").pack()
+        self.password_entry = ttk.Entry(frame, width=30, show="*")
+        self.password_entry.pack(pady=5)
+
+        # Кнопка входа
+        btn_login = ttk.Button(frame, text="Войти", command=self.check_credentials)
+        btn_login.pack(pady=20)
+
+        # Кнопка назад
+        btn_back = ttk.Button(frame, text="Назад", command=lambda: self.show_screen("main"))
+        btn_back.pack(pady=5)
+
+    # --- Экран 3: Личный кабинет Клиента ---
+    def create_client_dashboard(self, frame):
+        ttk.Label(frame, text="Личный кабинет Клиента", font=("Arial", 24)).pack(pady=20)
+        ttk.Label(frame, text="Здесь будет информация о заказах...").pack()
+        
+        btn_logout = ttk.Button(frame, text="Выйти", command=lambda: self.show_screen("main"))
+        btn_logout.pack(pady=20)
+
+    # --- Экран 4: Личный кабинет Админа ---
+    def create_admin_dashboard(self, frame):
+        ttk.Label(frame, text="Панель Администратора", font=("Arial", 24)).pack(pady=20)
+        ttk.Label(frame, text="Список заказов").pack()
+
+            # Создаем таблицу (Treeview)
+        columns = ("requestid", "startdate", "cartype", "carmodel", "problemdescription", "requeststatus", "completiondate", "repairparts", "masterid", "clientid")
+        self.tree = ttk.Treeview(frame, columns=columns, show="headings", height=10)
+
+        # Настройка заголовков
+        self.tree.heading("requestid", text="ID")
+        self.tree.heading("startdate", text="Дата заявки")
+        self.tree.heading("cartype", text="Тип автомобиля")
+        self.tree.heading("carmodel", text="Название")
+        self.tree.heading("problemdescription", text="Проблема")
+        self.tree.heading("requeststatus", text="Статус заказа")
+        self.tree.heading("completiondate", text="Дата завершения")
+        self.tree.heading("repairparts", text="Детали на замену")
+        self.tree.heading("masterid", text="ID работника")
+        self.tree.heading("clientid", text="ID клиента")
+
+        # Настройка ширины колонок
+        self.tree.column("requestid", width=50)
+        self.tree.column("startdate", width=150)
+        self.tree.column("cartype", width=80)
+        self.tree.column("carmodel", width=200)
+        self.tree.column("problemdescription", width=50)
+        self.tree.column("requeststatus", width=50)
+        self.tree.column("completiondate", width=50)
+        self.tree.column("repairparts", width=50)
+        self.tree.column("masterid", width=50)
+        self.tree.column("clientid", width=50)
+
+        # Добавляем скроллбар
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        # Упаковываем виджеты в фрейм
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Кнопка обновления
+        btn_refresh = ttk.Button(frame, text="Обновить данные", command=self.on_refresh)
+        btn_refresh.pack(pady=10)
+        
+        # Загружаем данные при создании экрана
+        self.load_data()
+
+        btn_logout = ttk.Button(frame, text="Выйти", command=lambda: self.show_screen("main"))
+        btn_logout.pack(pady=20)
+
+    def create_manager_dashboard(self, frame):
+        ttk.Label(frame, text="Личный кабинет Менеджера", font=("Arial", 24)).pack(pady=20)
+        ttk.Label(frame, text="Список заказов").pack()
+
+        btn_logout = ttk.Button(frame, text="Выйти", command=lambda: self.show_screen("main"))
+        btn_logout.pack(pady=20)
+
+    # --- Методы класса ---
+
+    def load_data(self):
+        """Загружает данные из БД и обновляет таблицу в фрейме."""
+        if not hasattr(self, 'tree'):
+            return
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+        
+        # Получаем данные
+        data = get_all_orders()
+        
+        # Вставляем данные в таблицу
+        for row in data:
+            self.tree.insert("", "end", values=row)
+
+    def on_refresh(self, event=None):
+        """Обработчик кнопки обновления."""
+        self.load_data()
+
+    # --- Логика ---
+
+    def check_credentials(self):
+        login = self.login_entry.get()
+        password = self.password_entry.get()
+
+        # Проверяем, есть ли такой пользователь в базе
+        if login in database.USERS:
+            user_data = database.USERS[login]
+            # Проверяем пароль
+            if user_data["password"] == password:
+                role = user_data["role"]
+                if role == "admin":
+                    self.show_screen("admin_dashboard")
+                elif role == "client":
+                    self.show_screen("client_dashboard")
+                elif role == "manager":
+                    self.show_screen("manager_dashboard")
+                else:
+                    self.show_screen("main") # Если роль неизвестна
+            else:
+                self.show_error("Неверный пароль!")
+        else:
+            self.show_error("Пользователь не найден!")
+
+    def show_error(self, message):
+        # Простое сообщение об ошибке (можно сделать messagebox)
+        print(f"Ошибка: {message}")
+        # Для наглядности можно вывести в консоль или создать всплывающее окно
+        # from tkinter import messagebox; messagebox.showerror("Ошибка", message)
+
+def main():
+    init_db()
+    
+    root = Tk()
+    app = App(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
