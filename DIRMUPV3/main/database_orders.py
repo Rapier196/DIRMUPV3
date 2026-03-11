@@ -12,7 +12,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Создаем таблицу Users, если её нет
+    # Создаем таблицу Orders, если её нет
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             requestid INTEGER PRIMARY KEY AUTOINCREMENT,

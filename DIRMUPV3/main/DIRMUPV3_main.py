@@ -2,7 +2,8 @@ from tkinter import *
 from tkinter import ttk
 import database
 import database_orders
-from database_orders import init_db, get_all_orders
+from database_orders import init_db as init_orders_db, get_all_orders
+from database import init_db as init_users_db, verify_user
 
 class App:
     def __init__(self, root):
@@ -123,6 +124,10 @@ class App:
         # Кнопка обновления
         btn_refresh = ttk.Button(frame, text="Обновить данные", command=self.on_refresh)
         btn_refresh.pack(pady=10)
+
+        # Кнопка изменения данных
+        btn_edit = ttk.Button(frame, text="Изменить", command=self.edit_info)
+        btn_edit.pack(pady=15)
         
         # Загружаем данные при создании экрана
         self.load_data()
@@ -147,7 +152,7 @@ class App:
             self.tree.delete(row)
         
         # Получаем данные
-        data = get_all_orders()
+        data = database_orders.get_all_orders()
         
         # Вставляем данные в таблицу
         for row in data:
@@ -157,30 +162,61 @@ class App:
         """Обработчик кнопки обновления."""
         self.load_data()
 
+    def edit_info(self):
+        """Ввод номера заказа"""
+        self.editor = Tk()
+        self.editor.title("Изменение данных")
+        self.editor.geometry("400x200")
+        self.label=ttk.Label(self.editor, text="Введите номер заказа:")
+        self.label.pack(anchor=N)
+
+        self.editor_input = ttk.Entry(self.editor, width=30)
+        self.editor_input.pack(pady=5)
+
+        self.id_btn = ttk.Button(self.editor, text = "Ввод", command=self.edit_engine)
+        self.id_btn.pack()
+
+    def edit_engine(self):
+        """Окно изменения данных"""
+        self.edit = Tk()
+        self.edit.title("Поиск")
+        self.edit.geometry("400x200")
+        self.label=ttk.Label(self.edit, text="Введите данные которые хотите изменить:")
+        self.label.pack(anchor=N)
+
+        status_list = ["В процессе ремона", "Готова к выдаче", "Новая заявка", "Ожидание автозапчастей"]
+        self.status_edit = ttk.Combobox(self.edit, values=status_list)
+        self.status_edit.pack()
+
+        self.problem_edit = ttk.Entry(self.edit, width=30)
+        self.problem_edit.pack()
+
+        self.workerid_edit = ttk.Entry(self.edit, width=30)
+        self.workerid_edit.pack()
+
+        self.parts_edit = ttk.Entry(self.edit, width=30)
+        self.parts_edit.pack()
+
+        self.edit_confirm = ttk.Button(self.edit, text = "Изменить", command=self.search_engine)
+        self.edit_confirm.pack()
     # --- Логика ---
 
     def check_credentials(self):
         login = self.login_entry.get()
         password = self.password_entry.get()
 
-        # Проверяем, есть ли такой пользователь в базе
-        if login in database.USERS:
-            user_data = database.USERS[login]
-            # Проверяем пароль
-            if user_data["password"] == password:
-                role = user_data["role"]
-                if role == "admin":
-                    self.show_screen("admin_dashboard")
-                elif role == "client":
-                    self.show_screen("client_dashboard")
-                elif role == "manager":
-                    self.show_screen("manager_dashboard")
-                else:
-                    self.show_screen("main") # Если роль неизвестна
-            else:
-                self.show_error("Неверный пароль!")
+        # Проверяем через новую функцию
+        is_valid, role = verify_user(login, password)
+        
+        if is_valid:
+            if role == "admin":
+                self.show_screen("admin_dashboard")
+            elif role == "client":
+                self.show_screen("client_dashboard")
+            elif role == "manager":
+                self.show_screen("main")
         else:
-            self.show_error("Пользователь не найден!")
+            self.show_error("Неверный логин или пароль!")
 
     def show_error(self, message):
         # Простое сообщение об ошибке (можно сделать messagebox)
@@ -189,8 +225,12 @@ class App:
         # from tkinter import messagebox; messagebox.showerror("Ошибка", message)
 
 def main():
-    init_db()
-    
+    # Инициализируем обе базы данных ПЕРЕД запуском
+    print("Инициализация баз данных...")
+    init_users_db()
+    init_orders_db()
+    print("Готово!")
+
     root = Tk()
     app = App(root)
     root.mainloop()
