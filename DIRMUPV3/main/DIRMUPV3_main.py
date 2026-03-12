@@ -2,8 +2,8 @@ from tkinter import *
 from tkinter import ttk
 import database
 import database_orders
-from database_orders import init_db as init_orders_db, get_all_orders
-from database import init_db as init_users_db, verify_user
+from database_orders import init_db as init_orders_db, get_all_orders, get_orders_by_client_id, get_order_by_id, update_order, create_order
+from database import init_db as init_users_db, verify_user, get_client_id_by_login
 
 class App:
     def __init__(self, root):
@@ -25,9 +25,12 @@ class App:
         self.add_screen("client_dashboard", self.create_client_dashboard)
         self.add_screen("admin_dashboard", self.create_admin_dashboard)
         self.add_screen("manager_dashboard", self.create_manager_dashboard)
+        self.add_screen("mechanic_dashboard", self.create_mechanic_dashboard)
 
         # Показываем главный экран при запуске
         self.show_screen("main")
+        self.current_user_id = None # ID текущего пользователя
+        self._current_role = None # Текущая роль (для редактирования)
 
     def add_screen(self, name, create_func):
         frame = Frame(self.container)
@@ -55,7 +58,7 @@ class App:
         ttk.Label(frame, text="Авторизация", font=("Arial", 24)).pack(pady=20)
 
         # Поле для логина
-        ttk.Label(frame, text="Логин / Почта:").pack()
+        ttk.Label(frame, text="Логин:").pack()
         self.login_entry = ttk.Entry(frame, width=30)
         self.login_entry.pack(pady=5)
 
@@ -75,33 +78,53 @@ class App:
     # --- Экран 3: Личный кабинет Клиента ---
     def create_client_dashboard(self, frame):
         ttk.Label(frame, text="Личный кабинет Клиента", font=("Arial", 24)).pack(pady=20)
-        ttk.Label(frame, text="Здесь будет информация о заказах...").pack()
-        
+        ttk.Label(frame, text="Мои заказы").pack()
+
+        # Кнопка создания заявки
+        btn_create = ttk.Button(frame, text="Создать заявку", command=self.create_order_form)
+        btn_create.pack(pady=10)
+
+        # Создаём таблицу
+        self._create_order_table(frame, "client")
+
         btn_logout = ttk.Button(frame, text="Выйти", command=lambda: self.show_screen("main"))
         btn_logout.pack(pady=20)
 
-    # --- Экран 4: Личный кабинет Админа ---
+    # --- Экран 4: Личный кабинет Оператора ---
     def create_admin_dashboard(self, frame):
-        ttk.Label(frame, text="Панель Администратора", font=("Arial", 24)).pack(pady=20)
-        ttk.Label(frame, text="Список заказов").pack()
+        self._create_order_table(frame, "admin")
+        btn_logout = ttk.Button(frame, text="Выйти", command=lambda: self.show_screen("main"))
+        btn_logout.pack(pady=20)
 
-            # Создаем таблицу (Treeview)
-        columns = ("requestid", "startdate", "cartype", "carmodel", "problemdescription", "requeststatus", "completiondate", "repairparts", "masterid", "clientid")
+    # --- Экран 5: Личный кабинет Менеджера ---
+    def create_manager_dashboard(self, frame):
+        self._create_order_table(frame, "manager")
+        btn_logout = ttk.Button(frame, text="Выйти", command=lambda: self.show_screen("main"))
+        btn_logout.pack(pady=20)
+
+    # --- Экран 6: Личный кабинет Автомеханика ---
+    def create_mechanic_dashboard(self, frame):
+        self._create_order_table(frame, "mechanic")
+        btn_logout = ttk.Button(frame, text="Выйти", command=lambda: self.show_screen("main"))
+        btn_logout.pack(pady=20)
+
+    def _create_order_table(self, frame, role):
+        """Создаёт таблицу заказов с учётом роли"""
+        columns = ("requestid", "startdate", "cartype", "carmodel", "problemdescription", "requeststatus", "completiondate", "repairparts", "masterid", "clientid", "comment")
         self.tree = ttk.Treeview(frame, columns=columns, show="headings", height=10)
 
-        # Настройка заголовков
         self.tree.heading("requestid", text="ID")
         self.tree.heading("startdate", text="Дата заявки")
         self.tree.heading("cartype", text="Тип автомобиля")
         self.tree.heading("carmodel", text="Название")
         self.tree.heading("problemdescription", text="Проблема")
-        self.tree.heading("requeststatus", text="Статус заказа")
+        self.tree.heading("requeststatus", text="Этап выполнения")
         self.tree.heading("completiondate", text="Дата завершения")
-        self.tree.heading("repairparts", text="Детали на замену")
+        self.tree.heading("repairparts", text="Запчасти на замену")
         self.tree.heading("masterid", text="ID работника")
         self.tree.heading("clientid", text="ID клиента")
+        self.tree.heading("comment", text="Комментарий")
 
-        # Настройка ширины колонок
         self.tree.column("requestid", width=50)
         self.tree.column("startdate", width=150)
         self.tree.column("cartype", width=80)
@@ -112,93 +135,382 @@ class App:
         self.tree.column("repairparts", width=50)
         self.tree.column("masterid", width=50)
         self.tree.column("clientid", width=50)
+        self.tree.column("comment", width=50)
 
-        # Добавляем скроллбар
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
 
-        # Упаковываем виджеты в фрейм
         self.tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Кнопка обновления
         btn_refresh = ttk.Button(frame, text="Обновить данные", command=self.on_refresh)
         btn_refresh.pack(pady=10)
 
-        # Кнопка изменения данных
-        btn_edit = ttk.Button(frame, text="Изменить", command=self.edit_info)
-        btn_edit.pack(pady=15)
+        # Кнопка редактирования зависит от роли
+        if role == "admin":
+            btn_edit = ttk.Button(frame, text="Изменить", command=self.edit_info_admin)
+        elif role == "manager":
+            btn_edit = ttk.Button(frame, text="Изменить", command=self.edit_info_manager)
+        elif role == "mechanic":
+            btn_edit = ttk.Button(frame, text="Изменить", command=self.edit_info_mechanic)
+        else:
+            btn_edit = None # У клиента нет кнопки "Изменить"
         
-        # Загружаем данные при создании экрана
-        self.load_data()
+        if btn_edit:
+            btn_edit.pack(pady=15)
+        
+        self.load_data(role)
 
-        btn_logout = ttk.Button(frame, text="Выйти", command=lambda: self.show_screen("main"))
-        btn_logout.pack(pady=20)
-
-    def create_manager_dashboard(self, frame):
-        ttk.Label(frame, text="Личный кабинет Менеджера", font=("Arial", 24)).pack(pady=20)
-        ttk.Label(frame, text="Список заказов").pack()
-
-        btn_logout = ttk.Button(frame, text="Выйти", command=lambda: self.show_screen("main"))
-        btn_logout.pack(pady=20)
-
-    # --- Методы класса ---
-
-    def load_data(self):
-        """Загружает данные из БД и обновляет таблицу в фрейме."""
+    def load_data(self, role):
         if not hasattr(self, 'tree'):
             return
         for row in self.tree.get_children():
             self.tree.delete(row)
         
-        # Получаем данные
-        data = database_orders.get_all_orders()
-        
-        # Вставляем данные в таблицу
+        if role == "client":
+            # Для клиента показываем только его заказы
+            if hasattr(self, 'current_user_id') and self.current_user_id is not None:
+                data = database_orders.get_orders_by_client_id(self.current_user_id)
+            else:
+                # Если пользователь не вошёл, показываем пустую таблицу
+                data = []
+        else:
+            # Для остальных показываем все заказы
+            data = database_orders.get_all_orders()
+
         for row in data:
             self.tree.insert("", "end", values=row)
 
     def on_refresh(self, event=None):
-        """Обработчик кнопки обновления."""
-        self.load_data()
+        """Обновляет таблицу"""
+    # Определяем текущую роль по названию экрана
+        for name, frame in self.screens.items():
+            if name == "client_dashboard":
+                self.load_data("client")
+            elif name == "admin_dashboard":
+                self.load_data("admin")
+            elif name == "manager_dashboard":
+                self.load_data("manager")
+            elif name == "mechanic_dashboard":
+                self.load_data("mechanic")
+            break
 
-    def edit_info(self):
-        """Ввод номера заказа"""
-        self.editor = Tk()
+    # ==================== СОЗДАНИЕ ЗАЯВКИ ====================
+    def create_order_form(self):
+        """Форма создания новой заявки"""
+        self.order_form = Toplevel(self.root)
+        self.order_form.title("Создание заявки")
+        self.order_form.geometry("500x500")
+        self.order_form.transient(self.root)
+        self.order_form.grab_set()
+
+        ttk.Label(self.order_form, text="Новая заявка", font=("Arial", 16, "bold")).pack(pady=10)
+
+        form_frame = Frame(self.order_form)
+        form_frame.pack(pady=10, padx=20, fill=X)
+
+        # Поля для ввода
+        fields = [
+            ("startdate", "Дата заявки:", "Entry"),
+            ("cartype", "Тип автомобиля:", "Entry"),
+            ("carmodel", "Модель автомобиля:", "Entry"),
+            ("problemdescription", "Описание проблемы:", "Entry"),
+            ("requeststatus", "Статус:", "Combobox"),
+            ("comment", "Комментарий:", "Entry"),
+        ]
+
+        self.order_widgets = {}
+        status_list = ["Новая заявка"]
+
+        for i, (field_name, label_text, widget_type) in enumerate(fields):
+            ttk.Label(form_frame, text=label_text).grid(row=i, column=0, sticky=W, pady=5)
+
+            if widget_type == "Entry":
+                entry = ttk.Entry(form_frame, width=30)
+                entry.grid(row=i, column=1, pady=5)
+                self.order_widgets[field_name] = entry
+            elif widget_type == "Combobox":
+                combo = ttk.Combobox(form_frame, values=status_list, state="readonly", width=27)
+                combo.grid(row=i, column=1, pady=5)
+                combo.set("Новая заявка")
+                self.order_widgets[field_name] = combo
+
+        # Кнопки
+        btn_frame = Frame(self.order_form)
+        btn_frame.pack(pady=20)
+
+        ttk.Button(btn_frame, text="Создать", command=self.submit_order).pack(side=LEFT, padx=10)
+        ttk.Button(btn_frame, text="Отмена", command=self.order_form.destroy).pack(side=LEFT, padx=10)
+
+    def submit_order(self):
+        """Отправляет данные о новой заявке в БД"""
+        try:
+            startdate = self.order_widgets["startdate"].get().strip()
+            cartype = self.order_widgets["cartype"].get().strip()
+            carmodel = self.order_widgets["carmodel"].get().strip()
+            problemdescription = self.order_widgets["problemdescription"].get().strip()
+            requeststatus = self.order_widgets["requeststatus"].get().strip()
+            comment = self.order_widgets["comment"].get().strip()
+
+            if not all([startdate, cartype, carmodel, problemdescription, requeststatus]):
+                self.show_error("Заполните все обязательные поля!")
+                return
+            
+            # Создаём заказ
+            result = create_order(
+                startdate=startdate,
+                cartype=cartype,
+                carmodel=carmodel,
+                problemdescription=problemdescription,
+                requeststatus=requeststatus,
+                client_id=self.current_user_id,
+                completiondate=None,
+                repairparts=None,
+                masterid=None,
+                comment=comment if comment else None
+            )
+
+            if result:
+                self.show_error("Заявка успешно создана!")
+                self.order_form.destroy()
+                self.load_data("client") # Обновляем таблицу
+            else:
+                self.show_error("Ошибка создания заявки!")
+        except Exception as e:
+            self.show_error(f"Ошибка: {str(e)}")
+
+    # ==================== АДМИН ====================
+    def edit_info_admin(self):
+        """Ввод номера заказа для администратора"""
+        self._current_role = "admin"
+        self._show_order_id_input()
+
+    # ==================== МЕНЕДЖЕР ====================
+    def edit_info_manager(self):
+        """Ввод номера заказа для менеджера"""
+        self._current_role = "manager"
+        self._show_order_id_input()
+
+    # ==================== МЕХАНИК ====================
+    def edit_info_mechanic(self):
+        """Ввод номера заказа для автомеханика"""
+        self._current_role = "mechanic"
+        self._show_order_id_input()
+
+    def _show_order_id_input(self):
+        """Общее окно ввода номера заказа"""
+        self.editor = Toplevel(self.root)
         self.editor.title("Изменение данных")
         self.editor.geometry("400x200")
-        self.label=ttk.Label(self.editor, text="Введите номер заказа:")
-        self.label.pack(anchor=N)
+        self.editor.transient(self.root)
+        self.editor.grab_set()
+
+        self.label = ttk.Label(self.editor, text="Введите номер заказа:")
+        self.label.pack(anchor=N, pady=10)
 
         self.editor_input = ttk.Entry(self.editor, width=30)
         self.editor_input.pack(pady=5)
 
-        self.id_btn = ttk.Button(self.editor, text = "Ввод", command=self.edit_engine)
-        self.id_btn.pack()
+        self.id_btn = ttk.Button(self.editor, text="Ввод", command=self._get_order_data)
+        self.id_btn.pack(pady=10)
 
-    def edit_engine(self):
-        """Окно изменения данных"""
-        self.edit = Tk()
-        self.edit.title("Поиск")
-        self.edit.geometry("400x200")
-        self.label=ttk.Label(self.edit, text="Введите данные которые хотите изменить:")
-        self.label.pack(anchor=N)
+    def _get_order_data(self):
+        """Получение данных из БД"""
+        try:
+            order_id = int(self.editor_input.get())
+        except ValueError:
+            self.show_error("Введите корректный номер заказа!")
+            return
+        
+        order_data = get_order_by_id(order_id)
 
-        status_list = ["В процессе ремона", "Готова к выдаче", "Новая заявка", "Ожидание автозапчастей"]
-        self.status_edit = ttk.Combobox(self.edit, values=status_list)
-        self.status_edit.pack()
+        if not order_data:
+            self.show_error("Заказ с таким ID не найден!")
+            return
+        
+        self.editor.destroy()
+        self.order_id = order_id
+        self.order_data = order_data
 
-        self.problem_edit = ttk.Entry(self.edit, width=30)
-        self.problem_edit.pack()
+        # Определяем роль и создаём форму
+        if self._current_role == "admin":
+            self._create_admin_edit_form()
+        elif self._current_role == "manager":
+            self._create_manager_edit_form()
+        elif self._current_role == "mechanic":
+            self._create_mechanic_edit_form()
 
-        self.workerid_edit = ttk.Entry(self.edit, width=30)
-        self.workerid_edit.pack()
+    def _create_admin_edit_form(self):
+        """Форма редактирования для администратора"""
+        self.edit = Toplevel(self.root)
+        self.edit.title("Редактирование заказа")
+        self.edit.geometry("500x400")
+        self.edit.transient(self.root)
+        self.edit.grab_set()
 
-        self.parts_edit = ttk.Entry(self.edit, width=30)
-        self.parts_edit.pack()
+        ttk.Label(self.edit, text="Редактирование заказа", font=("Arial", 16, "bold")).pack(pady=10)
 
-        self.edit_confirm = ttk.Button(self.edit, text = "Изменить", command=self.search_engine)
-        self.edit_confirm.pack()
+        form_frame = Frame(self.edit)
+        form_frame.pack(pady=10, padx=20, fill=X)
+
+        fields = [
+            ("problemdescription", "Проблема:", "Entry"),
+            ("requeststatus", "Этап выполнения:", "Combobox"),
+            ("completiondate", "Дата завершения:", "Entry"),
+            ("repairparts", "Запчасти на замену:", "Entry"),
+            ("masterid", "ID работника:", "Entry"),
+            ("comment", "Комментарий:", "Entry"),
+        ]
+
+        self.edit_widgets = {}
+        status_list = ["В процессе ремонта", "Готова к выдаче", "Новая заявка", "Ожидание автозапчастей"]
+
+        for i, (field_name, label_text, widget_type) in enumerate(fields):
+            ttk.Label(form_frame, text=label_text).grid(row=i, column=0, sticky=W, pady=5)
+
+            if widget_type == "Entry":
+                entry = ttk.Entry(form_frame, width=30)
+                entry.grid(row=i, column=1, pady=5)
+                self.edit_widgets[field_name] = entry
+            elif widget_type == "Combobox":
+                combo = ttk.Combobox(form_frame, values=status_list, state="readonly", width=27)
+                combo.grid(row=i, column=1, pady=5)
+                self.edit_widgets[field_name] = combo
+
+        btn_frame = Frame(self.edit)
+        btn_frame.pack(pady=20)
+
+        ttk.Button(btn_frame, text="Применить", command=self.save_changes).pack(side=LEFT, padx=10)
+        ttk.Button(btn_frame, text="Отмена", command=self.edit.destroy).pack(side=LEFT, padx=10)
+
+        self._load_current_data()
+
+    def _create_manager_edit_form(self):
+        """Форма редактирования для менеджера"""
+        self.edit = Toplevel(self.root)
+        self.edit.title("Редактирование заказа")
+        self.edit.geometry("500x400")
+        self.edit.transient(self.root)
+        self.edit.grab_set()
+
+        ttk.Label(self.edit, text="Редактирование заказа", font=("Arial", 16, "bold")).pack(pady=10)
+
+        form_frame = Frame(self.edit)
+        form_frame.pack(pady=10, padx=20, fill=X)
+
+        fields = [
+            ("completiondate", "Дата завершения:", "Entry"),
+            ("masterid", "ID работника:", "Entry"),
+        ]
+
+        self.edit_widgets = {}
+
+        for i, (field_name, label_text, widget_type) in enumerate(fields):
+            ttk.Label(form_frame, text=label_text).grid(row=i, column=0, sticky=W, pady=5)
+
+            entry = ttk.Entry(form_frame, width=30)
+            entry.grid(row=i, column=1, pady=5)
+            self.edit_widgets[field_name] = entry
+
+        btn_frame = Frame(self.edit)
+        btn_frame.pack(pady=20)
+
+        ttk.Button(btn_frame, text="Применить", command=self.save_changes).pack(side=LEFT, padx=10)
+        ttk.Button(btn_frame, text="Отмена", command=self.edit.destroy).pack(side=LEFT, padx=10)
+
+        self._load_current_data()
+
+    def _create_mechanic_edit_form(self):
+        """Форма редактирования для автомеханика"""
+        self.edit = Toplevel(self.root)
+        self.edit.title("Редактирование заказа")
+        self.edit.geometry("500x400")
+        self.edit.transient(self.root)
+        self.edit.grab_set()
+
+        ttk.Label(self.edit, text="Редактирование заказа", font=("Arial", 16, "bold")).pack(pady=10)
+
+        form_frame = Frame(self.edit)
+        form_frame.pack(pady=10, padx=20, fill=X)
+
+        fields = [
+            ("repairparts", "Запчасти на замену:", "Entry"),
+            ("comment", "Комментарий:", "Entry"),
+        ]
+
+        self.edit_widgets = {}
+
+        for i, (field_name, label_text, widget_type) in enumerate(fields):
+            ttk.Label(form_frame, text=label_text).grid(row=i, column=0, sticky=W, pady=5)
+
+            entry = ttk.Entry(form_frame, width=30)
+            entry.grid(row=i, column=1, pady=5)
+            self.edit_widgets[field_name] = entry
+
+        btn_frame = Frame(self.edit)
+        btn_frame.pack(pady=20)
+
+        ttk.Button(btn_frame, text="Применить", command=self.save_changes).pack(side=LEFT, padx=10)
+        ttk.Button(btn_frame, text="Отмена", command=self.edit.destroy).pack(side=LEFT, padx=10)
+
+        self._load_current_data()
+
+    # ==================== ОБЩИЕ МЕТОДЫ ====================
+    def _load_current_data(self):
+        """Загружает текущие данные в поля редактирования"""
+        # order_data: (requestid, startdate, cartype, carmodel, problemdescription, requeststatus, completiondate, repairparts, masterid, clientid, comment)
+        # Индексы: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+
+        if not hasattr(self, 'order_data'):
+            return
+        
+        order_data = self.order_data
+
+        if "problemdescription" in self.edit_widgets:
+            self.edit_widgets["problemdescription"].insert(0, order_data[4] or "")
+        if "requeststatus" in self.edit_widgets:
+            self.edit_widgets["requeststatus"].set(order_data[5] or "")
+        if "completiondate" in self.edit_widgets:
+            self.edit_widgets["completiondate"].insert(0, order_data[6] or "")
+        if "repairparts" in self.edit_widgets:
+            self.edit_widgets["repairparts"].insert(0, order_data[7] or "")
+        if "masterid" in self.edit_widgets:
+            self.edit_widgets["masterid"].insert(0, str(order_data[8]) if order_data[8] else "")
+        if "comment" in self.edit_widgets:
+            self.edit_widgets["comment"].insert(0, order_data[10] or "")
+    
+    def save_changes(self):
+        """Сохраняет изменения в БД"""
+        # Формируем словарь с изменёнными полями
+        changes = {}
+
+        for field_name, widget in self.edit_widgets.items():
+            value = widget.get().strip()
+            if value: # Обновляем только если поле не пустое
+                if field_name == "masterid":
+                    try:
+                        value = int(value)
+                    except ValueError:
+                        self.show_error("ID работника должен быть числом!")
+                        return
+                changes[field_name] = value
+            
+        if not changes:
+            self.show_error("Не выбрано ни одного поля для изменения!")
+            return
+            
+        # Обновляем базу данных
+        try:
+            result = update_order(self.order_id, **changes)
+            if result:
+                self.show_error("Данные успешно обновлены!")
+                self.load_data(self._current_role) # Обновляем таблицу
+                self.edit.destroy()
+            else:
+                self.show_error("Ошибка обновления данных!")
+        except Exception as e:
+            self.show_error(f"Ошибка обновления: {str(e)}")
+
     # --- Логика ---
 
     def check_credentials(self):
@@ -206,14 +518,19 @@ class App:
         password = self.password_entry.get()
 
         # Проверяем через новую функцию
-        is_valid, role = verify_user(login, password)
+        is_valid, role, user_id = verify_user(login, password)
         
         if is_valid:
+            self.current_user_id = user_id # Сохраняем ID пользователя
             if role == "admin":
                 self.show_screen("admin_dashboard")
             elif role == "client":
                 self.show_screen("client_dashboard")
             elif role == "manager":
+                self.show_screen("manager_dashboard")
+            elif role == "mechanic":
+                self.show_screen("mechanic_dashboard")
+            else:
                 self.show_screen("main")
         else:
             self.show_error("Неверный логин или пароль!")
