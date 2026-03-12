@@ -20,6 +20,10 @@ class App:
 
         # Создаем экраны (Фреймы)
         self.screens = {}
+        self.trees = {}
+        self.current_user_id = None # ID текущего пользователя
+        self._current_role = None # Текущая роль (для редактирования)
+        
         self.add_screen("main", self.create_main_screen)
         self.add_screen("login", self.create_login_screen)
         self.add_screen("client_dashboard", self.create_client_dashboard)
@@ -29,8 +33,6 @@ class App:
 
         # Показываем главный экран при запуске
         self.show_screen("main")
-        self.current_user_id = None # ID текущего пользователя
-        self._current_role = None # Текущая роль (для редактирования)
 
     def add_screen(self, name, create_func):
         frame = Frame(self.container)
@@ -111,39 +113,39 @@ class App:
     def _create_order_table(self, frame, role):
         """Создаёт таблицу заказов с учётом роли"""
         columns = ("requestid", "startdate", "cartype", "carmodel", "problemdescription", "requeststatus", "completiondate", "repairparts", "masterid", "clientid", "comment")
-        self.tree = ttk.Treeview(frame, columns=columns, show="headings", height=10)
+        tree = ttk.Treeview(frame, columns=columns, show="headings", height=10)
 
-        self.tree.heading("requestid", text="ID")
-        self.tree.heading("startdate", text="Дата заявки")
-        self.tree.heading("cartype", text="Тип автомобиля")
-        self.tree.heading("carmodel", text="Название")
-        self.tree.heading("problemdescription", text="Проблема")
-        self.tree.heading("requeststatus", text="Этап выполнения")
-        self.tree.heading("completiondate", text="Дата завершения")
-        self.tree.heading("repairparts", text="Запчасти на замену")
-        self.tree.heading("masterid", text="ID работника")
-        self.tree.heading("clientid", text="ID клиента")
-        self.tree.heading("comment", text="Комментарий")
+        tree.heading("requestid", text="ID")
+        tree.heading("startdate", text="Дата заявки")
+        tree.heading("cartype", text="Тип автомобиля")
+        tree.heading("carmodel", text="Название")
+        tree.heading("problemdescription", text="Проблема")
+        tree.heading("requeststatus", text="Этап выполнения")
+        tree.heading("completiondate", text="Дата завершения")
+        tree.heading("repairparts", text="Запчасти на замену")
+        tree.heading("masterid", text="ID работника")
+        tree.heading("clientid", text="ID клиента")
+        tree.heading("comment", text="Комментарий")
 
-        self.tree.column("requestid", width=50)
-        self.tree.column("startdate", width=150)
-        self.tree.column("cartype", width=80)
-        self.tree.column("carmodel", width=200)
-        self.tree.column("problemdescription", width=50)
-        self.tree.column("requeststatus", width=50)
-        self.tree.column("completiondate", width=50)
-        self.tree.column("repairparts", width=50)
-        self.tree.column("masterid", width=50)
-        self.tree.column("clientid", width=50)
-        self.tree.column("comment", width=50)
+        tree.column("requestid", width=50)
+        tree.column("startdate", width=150)
+        tree.column("cartype", width=80)
+        tree.column("carmodel", width=200)
+        tree.column("problemdescription", width=50)
+        tree.column("requeststatus", width=50)
+        tree.column("completiondate", width=50)
+        tree.column("repairparts", width=50)
+        tree.column("masterid", width=50)
+        tree.column("clientid", width=50)
+        tree.column("comment", width=50)
 
-        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
 
-        self.tree.pack(side="left", fill="both", expand=True)
+        tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        btn_refresh = ttk.Button(frame, text="Обновить данные", command=self.on_refresh)
+        btn_refresh = ttk.Button(frame, text="Обновить данные", command=self.on_refresh(role))
         btn_refresh.pack(pady=10)
 
         # Кнопка редактирования зависит от роли
@@ -159,13 +161,15 @@ class App:
         if btn_edit:
             btn_edit.pack(pady=15)
         
+        self.trees[role] = tree
         self.load_data(role)
 
     def load_data(self, role):
-        if not hasattr(self, 'tree'):
+        if role not in self.trees: # Проверка на наличие таблицы
             return
-        for row in self.tree.get_children():
-            self.tree.delete(row)
+        tree = self.trees[role] # Получаем таблицу из словаря
+        for row in tree.get_children():
+            tree.delete(row)
         
         if role == "client":
             # Для клиента показываем только его заказы
@@ -179,21 +183,11 @@ class App:
             data = database_orders.get_all_orders()
 
         for row in data:
-            self.tree.insert("", "end", values=row)
+            tree.insert("", "end", values=row)
 
-    def on_refresh(self, event=None):
+    def on_refresh(self, role):
         """Обновляет таблицу"""
-    # Определяем текущую роль по названию экрана
-        for name, frame in self.screens.items():
-            if name == "client_dashboard":
-                self.load_data("client")
-            elif name == "admin_dashboard":
-                self.load_data("admin")
-            elif name == "manager_dashboard":
-                self.load_data("manager")
-            elif name == "mechanic_dashboard":
-                self.load_data("mechanic")
-            break
+        self.load_data(role) # Передаём роль
 
     # ==================== СОЗДАНИЕ ЗАЯВКИ ====================
     def create_order_form(self):
@@ -273,7 +267,8 @@ class App:
             if result:
                 self.show_error("Заявка успешно создана!")
                 self.order_form.destroy()
-                self.load_data("client") # Обновляем таблицу
+                for role in ["client", "admin", "manager", "mechanic"]: # Добавляем цикл
+                    self.load_data(role)
             else:
                 self.show_error("Ошибка создания заявки!")
         except Exception as e:
@@ -504,7 +499,15 @@ class App:
             result = update_order(self.order_id, **changes)
             if result:
                 self.show_error("Данные успешно обновлены!")
-                self.load_data(self._current_role) # Обновляем таблицу
+                # Используем self._current_role вместо self._load_data()
+                if self._current_role == "client":
+                    self.load_data("client")
+                elif self._current_role == "admin":
+                    self.load_data("admin")
+                elif self._current_role == "manager":
+                    self.load_data("manager")
+                elif self._current_role == "mechanic":
+                    self.load_data("mechanic")
                 self.edit.destroy()
             else:
                 self.show_error("Ошибка обновления данных!")
@@ -522,6 +525,7 @@ class App:
         
         if is_valid:
             self.current_user_id = user_id # Сохраняем ID пользователя
+            self._current_role = role # Сохраняем роль пользователя
             if role == "admin":
                 self.show_screen("admin_dashboard")
             elif role == "client":
